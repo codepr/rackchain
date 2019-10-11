@@ -3,8 +3,9 @@
 (require file/sha1)
 
 (define TARGET-BITS 16)
+(define TARGET (arithmetic-shift 1 (- 256 TARGET-BITS)))
 
-(struct block (timestamp data prev-block hashcode) #:transparent)
+(struct block (timestamp data prev-block hashcode nonce) #:transparent)
 (struct blockchain (blocks))
 
 (define (hash-block prev-hash data timestamp)
@@ -21,20 +22,33 @@
                  (number->string (block-timestamp block))
                  (number->string TARGET-BITS)
                  (number->string nonce)))]
-         [target (arithmetic-shift 1 (- 256 TARGET-BITS))]
          [data-hash (string->number
                      (bytes->hex-string
                       (sha256-bytes (open-input-string data))) 16)])
     (cond
-      [(< data-hash target) (cons (number->string data-hash 16) nonce)]
+      [(< data-hash TARGET) (cons (number->string data-hash 16) nonce)]
       [else (proof-of-work block (+ 1 nonce))])))
+
+(define (validate-block block)
+ (let* ([data (string-append*
+               (block-prev-block block)
+               (list
+                (block-data block)
+                (number->string (block-timestamp block))
+                (number->string TARGET-BITS)
+                (number->string (block-nonce block))))]
+        [data-hash (string->number
+                    (bytes->hex-string
+                     (sha256-bytes (open-input-string data))) 16)])
+   (cond
+     [(< data-hash TARGET) #t]
+     [else #f])))
 
 (define (get-block data prev-block-hash)
   (let* ([now (current-seconds)]
-         ;[hashcode (hash-block prev-block-hash data now)])
-         [new-block (block now data prev-block-hash "")]
-         [hashcode (car (proof-of-work new-block 0))])
-    (block now data prev-block-hash hashcode)))
+         [new-block (block now data prev-block-hash "" 0)]
+         [hashcode (proof-of-work new-block 0)])
+    (block now data prev-block-hash (car hashcode) (cdr hashcode))))
 
 (define (add-block bc data)
   (let* ([prev (last (blockchain-blocks bc))]
@@ -57,5 +71,6 @@
     (for-each
      (λ (block)
        (displayln (format "Block: ~s" (block-data block)))
-       (displayln (format "Hash: ~s" (block-hashcode block))))
+       (displayln (format "Hash: ~s" (block-hashcode block)))
+       (displayln (format "Valid: ~s" (validate-block block))))
      (blockchain-blocks bc))))
