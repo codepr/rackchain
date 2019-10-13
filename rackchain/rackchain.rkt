@@ -87,15 +87,15 @@
             "Send 2 BTC to Balthasar"))
 
 (define (blockchain-jsexpr bc)
-  (bytes-append
+  (bytes-append*
    #"{\"blocks\":"
-   (jsexpr->bytes
-    (map (λ (block)
-           (hasheq 'timestamp (block-timestamp block)
-                   'data (block-data block)
-                   'nonce (block-nonce block)
-                   'valid (validate-block block)))
-         (blockchain-blocks bc)))))
+   (list (jsexpr->bytes
+          (map (λ (block)
+                 (hasheq 'timestamp (block-timestamp block)
+                         'data (block-data block)
+                         'nonce (block-nonce block)
+                         'valid (validate-block block)))
+               (blockchain-blocks bc))) #"}")))
 
 (define (get-blockchain req)
   (response
