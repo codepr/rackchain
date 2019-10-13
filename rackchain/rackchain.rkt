@@ -1,12 +1,16 @@
 #lang racket
 
 (require file/sha1)
+(require web-server/dispatch
+         web-server/http
+         web-server/servlet-env)
+(require json)
 
-(define TARGET-BITS 16)
-(define TARGET (arithmetic-shift 1 (- 256 TARGET-BITS)))
+(define target-bits 20)
+(define target (arithmetic-shift 1 (- 256 target-bits)))
 
 (struct block (timestamp data prev-block hashcode nonce) #:transparent)
-(struct blockchain (blocks))
+(struct blockchain (blocks) #:transparent)
 
 (define (hash-block prev-hash data timestamp)
   (bytes->hex-string
@@ -19,14 +23,14 @@
                 (block-prev-block block)
                 (list
                  (block-data block)
-                 (number->string (block-timestamp block))
-                 (number->string TARGET-BITS)
-                 (number->string nonce)))]
+                 (number->string (block-timestamp block) 16)
+                 (number->string target-bits 16)
+                 (number->string nonce 16)))]
          [data-hash (string->number
                      (bytes->hex-string
                       (sha256-bytes (open-input-string data))) 16)])
     (cond
-      [(< data-hash TARGET) (cons (number->string data-hash 16) nonce)]
+      [(< data-hash target) (cons (number->string data-hash 16) nonce)]
       [else (proof-of-work block (+ 1 nonce))])))
 
 (define (validate-block block)
@@ -34,14 +38,14 @@
                (block-prev-block block)
                (list
                 (block-data block)
-                (number->string (block-timestamp block))
-                (number->string TARGET-BITS)
-                (number->string (block-nonce block))))]
+                (number->string (block-timestamp block) 16)
+                (number->string target-bits 16)
+                (number->string (block-nonce block) 16)))]
         [data-hash (string->number
                     (bytes->hex-string
                      (sha256-bytes (open-input-string data))) 16)])
    (cond
-     [(< data-hash TARGET) #t]
+     [(< data-hash target) #t]
      [else #f])))
 
 (define (get-block data prev-block-hash)
@@ -54,7 +58,7 @@
   (let* ([prev (last (blockchain-blocks bc))]
          [new-block (get-block data (block-hashcode prev))])
     (displayln (format "Mining the block ~s" data))
-    (blockchain (append (blockchain-blocks bc) (list new-block)))))
+    (blockchain (reverse (cons new-block (blockchain-blocks bc))))))
 
 (define (genesis-block)
   (get-block "Genesis block" ""))
@@ -72,5 +76,37 @@
      (λ (block)
        (displayln (format "Block: ~s" (block-data block)))
        (displayln (format "Hash: ~s" (block-hashcode block)))
+       (displayln (format "Nonce: ~s" (block-nonce block)))
        (displayln (format "Valid: ~s" (validate-block block))))
      (blockchain-blocks bc))))
+
+(define bc (add-block
+            (add-block
+             (add-block (new-blockchain) "Send 1 BTC to Casper")
+             "Send 5 BTC to Melchior")
+            "Send 2 BTC to Balthasar"))
+
+(define (blockchain-jsexpr bc)
+  (bytes-append
+   #"{\"blocks\":"
+   (jsexpr->bytes
+    (map (λ (block)
+           (hasheq 'timestamp (block-timestamp block)
+                   'data (block-data block)
+                   'nonce (block-nonce block)
+                   'valid (validate-block block)))
+         (blockchain-blocks bc)))))
+
+(define (get-blockchain req)
+  (response
+   200 #"OK"
+   (current-seconds) #"application/json"
+   empty
+   (λ (op)
+     (write-bytes (blockchain-jsexpr bc) op))))
+
+(define-values (serve _)
+  (dispatch-rules
+   [("blockchain") #:method "get" get-blockchain]))
+
+(serve/servlet serve #:port 6090 #:command-line? #t #:servlet-regexp #rx"")
