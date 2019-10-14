@@ -77,7 +77,10 @@
 
 ;; HTTP REST APIs
 
-(define bc (new-blockchain))
+(define bc
+  ((λ ()
+     (displayln "Creating new blockchain")
+     (new-blockchain))))
 
 (define (blockchain-jsexpr bc)
   (bytes-append*
@@ -107,9 +110,15 @@
    (λ (op)
      (write-bytes #"OK" op))))
 
+(define (not-found req)
+  (response 404 #"Not found"))
+
 (define-values (serve _)
   (dispatch-rules
    [("blockchain") #:method "get" get-blockchain]
-   [("blockchain") #:method "post" post-blockchain]))
+   [("blockchain") #:method "post" post-blockchain]
+   [else not-found]))
 
-(serve/servlet serve #:port 6090 #:command-line? #t #:servlet-regexp #rx"")
+(module+ main
+  (displayln "Listening on 127.0.0.1:6090")
+  (serve/servlet serve #:port 6090 #:command-line? #t #:servlet-regexp #rx""))
