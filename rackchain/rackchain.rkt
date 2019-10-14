@@ -6,17 +6,11 @@
          web-server/servlet-env)
 (require json)
 
-(define target-bits 20)
+(define target-bits 20)  ;; proof-of-work difficulity
 (define target (arithmetic-shift 1 (- 256 target-bits)))
 
 (struct block (timestamp data prev-block hashcode nonce) #:transparent)
 (struct blockchain (blocks) #:transparent)
-
-(define (hash-block prev-hash data timestamp)
-  (bytes->hex-string
-   (sha256-bytes
-    (open-input-string
-     (string-append* prev-hash data (list (number->string timestamp)))))))
 
 (define (proof-of-work block nonce)
   (let* ([data (string-append*
@@ -58,33 +52,32 @@
   (let* ([prev (last (blockchain-blocks bc))]
          [new-block (get-block data (block-hashcode prev))])
     (displayln (format "Mining the block ~s" data))
-    (blockchain (reverse (cons new-block (blockchain-blocks bc))))))
+    (blockchain (cons new-block (blockchain-blocks bc)))))
 
 (define (genesis-block)
   (get-block "Genesis block" ""))
+
+;; Blockchain functions
 
 (define (new-blockchain)
   (blockchain (list (genesis-block))))
 
 (define (test-blockchain)
-  (let ([bc (add-block
-             (add-block
-              (add-block (new-blockchain) "Send 1 BTC to Casper")
-              "Send 5 BTC to Melchior")
-             "Send 2 BTC to Balthasar")])
+  (let* ([bc (new-blockchain)]
+         [bc (add-block bc "Send 1 BTC to Casper")]
+         [bc (add-block bc "Send 5 BTC to Melchior")]
+         [bc (add-block bc "Send 2 BTC to Balthasar")])
     (for-each
      (λ (block)
        (displayln (format "Block: ~s" (block-data block)))
        (displayln (format "Hash: ~s" (block-hashcode block)))
        (displayln (format "Nonce: ~s" (block-nonce block)))
        (displayln (format "Valid: ~s" (validate-block block))))
-     (blockchain-blocks bc))))
+     (reverse (blockchain-blocks bc)))))
 
-(define bc (add-block
-            (add-block
-             (add-block (new-blockchain) "Send 1 BTC to Casper")
-             "Send 5 BTC to Melchior")
-            "Send 2 BTC to Balthasar"))
+;; HTTP REST APIs
+
+(define bc (new-blockchain))
 
 (define (blockchain-jsexpr bc)
   (bytes-append*
@@ -95,7 +88,7 @@
                          'data (block-data block)
                          'nonce (block-nonce block)
                          'valid (validate-block block)))
-               (blockchain-blocks bc))) #"}")))
+               (reverse (blockchain-blocks bc)))) #"}")))
 
 (define (get-blockchain req)
   (response
@@ -105,8 +98,18 @@
    (λ (op)
      (write-bytes (blockchain-jsexpr bc) op))))
 
+(define (post-blockchain req)
+  (set! bc (add-block bc (bytes->string/utf-8 (request-post-data/raw req))))
+  (response
+   200 #"OK"
+   (current-seconds) #"application/json"
+   empty
+   (λ (op)
+     (write-bytes #"OK" op))))
+
 (define-values (serve _)
   (dispatch-rules
-   [("blockchain") #:method "get" get-blockchain]))
+   [("blockchain") #:method "get" get-blockchain]
+   [("blockchain") #:method "post" post-blockchain]))
 
 (serve/servlet serve #:port 6090 #:command-line? #t #:servlet-regexp #rx"")
