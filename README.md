@@ -10,7 +10,7 @@ Creating new blockchain
 Listening on 127.0.0.1:6090
 ```
 
-Use a simple HTTP client or a browser
+Use a simple HTTP client or a browser (jq just for pretty print JSON response)
 
 ```sh
 $ curl -X GET http://localhost:6090/blockchain | jq
